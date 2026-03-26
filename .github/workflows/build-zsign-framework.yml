@@ -1,88 +1,51 @@
-name: Build ZSign Framework
+name: Build ZSign
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
 
 jobs:
   build:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-      - name: Install OpenSSL
-        run: brew install openssl@3
+      - name: Install Homebrew dependencies
+        run: |
+          brew update
+          brew install openssl@3
 
-      - name: Compile ZSign dylib/framework
+      - name: Set environment variables
+        run: |
+          export OPENSSL_PREFIX=$(brew --prefix openssl@3)
+          export SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+          echo "OPENSSL_PREFIX=$OPENSSL_PREFIX" >> $GITHUB_ENV
+          echo "SDK_PATH=$SDK_PATH" >> $GITHUB_ENV
+
+      - name: Build ZSign
         run: |
           set -euxo pipefail
 
-          # Use xcrun to find iOS SDK path
-          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
-          echo "iOS SDK Path: $SDK_PATH"
-
-          OPENSSL_PREFIX=$(brew --prefix openssl@3)
-          echo "OpenSSL Prefix: $OPENSSL_PREFIX"
-
-          # Build list of include paths, excluding .git and .github
-          CPP_INCLUDES=""
-          for dir in $(find . -type d ! -path "./.github*" ! -path "./.git*"); do
-              CPP_INCLUDES="$CPP_INCLUDES -I$dir"
-          done
+          # Include all directories
+          INCLUDE_DIRS=$(find . -type d -not -path "./.github/*" -print0 | xargs -0 -I {} echo -I{} | tr '\n' ' ')
+          INCLUDE_DIRS="$INCLUDE_DIRS -I. -I./common"
 
           # Find all source files
-          SRC_FILES=$(find . -type f ! -path "./.github/*" ! -path "./.git/*" \( -name "*.cpp" -o -name "*.c" -o -name "*.cxx" -o -name "*.cc" -o -name "*.mm" -o -name "*.m" \))
+          SRC_FILES=$(find . -type f '!' -path "./.github/*" '(' -name '*.cpp' -o -name '*.c' -o -name '*.cxx' -o -name '*.cc' -o -name '*.mm' -o -name '*.m' ')' )
 
           echo "Compiling ZSign with sources:"
           echo "$SRC_FILES"
 
-          # Compile as dynamic library
+          # Compile dynamic library
           clang++ -std=c++17 -fobjc-arc -arch arm64 \
-            -isysroot "$SDK_PATH" \
-            -miphoneos-version-min=14.0 \
-            -dynamiclib \
-            -install_name @rpath/ZSign.framework/ZSign \
-            $CPP_INCLUDES \
+            -isysroot "$SDK_PATH" -miphoneos-version-min=14.0 \
+            -dynamiclib -install_name @rpath/ZSign.framework/ZSign \
+            $INCLUDE_DIRS \
             -L"$OPENSSL_PREFIX/lib" -lssl -lcrypto \
             -framework Foundation -framework Security -framework CoreFoundation \
-            -o ZSign \
-            $SRC_FILES
-
-          # Package as framework
-          mkdir -p ZSign.framework/Headers
-          cp ZSign ZSign.framework/ZSign
-          find . -type f -name "*.h" ! -path "./.github/*" ! -path "./.git/*" -exec cp {} ZSign.framework/Headers/ \; || true
-
-          cat > ZSign.framework/Info.plist << EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>CFBundleExecutable</key>
-              <string>ZSign</string>
-              <key>CFBundleIdentifier</key>
-              <string>com.ziacml.helper.zsign</string>
-              <key>CFBundleName</key>
-              <string>ZSign</string>
-              <key>CFBundlePackageType</key>
-              <string>FMWK</string>
-              <key>CFBundleShortVersionString</key>
-              <string>1.0</string>
-              <key>CFBundleVersion</key>
-              <string>1</string>
-              <key>MinimumOSVersion</key>
-              <string>14.0</string>
-          </dict>
-          </plist>
-          EOF
-
-          codesign --force --sign - ZSign.framework
-
-          zip -r ZSign.framework.zip ZSign.framework
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ZSign.framework
-          path: ZSign.framework.zip
+            $SRC_FILES \
+            -o ZSign
