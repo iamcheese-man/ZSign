@@ -24,9 +24,9 @@ jobs:
           # Find ALL source files except .github
           find . -type f ! -path "./.github/*" \( \
             -name "*.cpp" -o \
-            -name "*.cc" -o \
-            -name "*.cxx" -o \
             -name "*.c" -o \
+            -name "*.cxx" -o \
+            -name "*.cc" -o \
             -name "*.mm" -o \
             -name "*.m" \
           \) -print0 > sources.txt
@@ -34,34 +34,26 @@ jobs:
           echo "Source files:"
           tr '\0' '\n' < sources.txt
 
-          xargs -0 clang++ \
-            -std=c++17 \
-            -fobjc-arc \
-            -arch arm64 \
+          # Compile everything as Objective-C++ (.mm) or C++ 
+          xargs -0 clang++ -std=c++17 -fobjc-arc -arch arm64 \
             -isysroot "$SDK_PATH" \
             -miphoneos-version-min=14.0 \
             -dynamiclib \
             -install_name @rpath/ZSign.framework/ZSign \
-            -I . \
-            -I "$OPENSSL_PREFIX/include" \
-            -L "$OPENSSL_PREFIX/lib" \
-            -lssl \
-            -lcrypto \
-            -framework Foundation \
-            -framework Security \
-            -framework CoreFoundation \
+            -I . -I ./common \
+            -L "$OPENSSL_PREFIX/lib" -lssl -lcrypto \
+            -framework Foundation -framework Security -framework CoreFoundation \
             -o ZSign < sources.txt
 
       - name: Package as framework
         run: |
           set -euxo pipefail
-
           mkdir -p ZSign.framework/Headers
-
+          
           # Binary
           cp ZSign ZSign.framework/ZSign
 
-          # Headers: copy ALL headers except .github
+          # Headers: copy all except .github
           find . -type f ! -path "./.github/*" \( -name "*.h" -o -name "*.hpp" \) -print0 | while IFS= read -r -d '' file; do
             cp "$file" ZSign.framework/Headers/
           done
