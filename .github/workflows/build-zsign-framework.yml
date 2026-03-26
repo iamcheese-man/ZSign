@@ -19,31 +19,41 @@ jobs:
           brew update
           brew install openssl
 
-      - name: Compile all files into a single Framework
+      - name: Build framework including C, C++, Obj-C, Obj-C++
         run: |
           OPENSSL_INC=$(brew --prefix openssl)/include
           OPENSSL_LIB=$(brew --prefix openssl)/lib
 
-          FRAMEWORK_NAME="ZSign"
-          FRAMEWORK_DIR="$PWD/build/$FRAMEWORK_NAME.framework"
+          FRAMEWORK_NAME="MyFramework"
+          BUILD_DIR="$PWD/build/$FRAMEWORK_NAME.framework"
 
-          mkdir -p "$FRAMEWORK_DIR/Headers"
-          mkdir -p "$FRAMEWORK_DIR/Versions/A"
+          mkdir -p "$BUILD_DIR/Headers"
+          mkdir -p "$BUILD_DIR/Versions/A"
+          mkdir -p "$BUILD_DIR/Resources"
 
-          echo "Collecting all files recursively..."
-          ALL_FILES=$(find . -type f)
+          echo "Finding all compilable source files..."
+          SRC_FILES=$(find . -type f \( -name '*.cpp' -o -name '*.cxx' -o -name '*.cc' -o -name '*.c' -o -name '*.m' -o -name '*.mm' \))
 
-          echo "Compiling into $FRAMEWORK_NAME.framework..."
-          clang++ -std=c++20 -dynamiclib -o "$FRAMEWORK_DIR/Versions/A/$FRAMEWORK_NAME" $ALL_FILES \
+          if [ -z "$SRC_FILES" ]; then
+            echo "No compilable source files found."
+          else
+            echo "Compiling sources..."
+            clang++ -std=c++20 -fobjc-arc -dynamiclib -o "$BUILD_DIR/Versions/A/$FRAMEWORK_NAME" $SRC_FILES \
               -I"$OPENSSL_INC" -L"$OPENSSL_LIB" -lssl -lcrypto -framework Foundation
+          fi
 
           echo "Copying headers..."
-          find . -type f -name '*.h' -exec cp {} "$FRAMEWORK_DIR/Headers/" \;
+          find . -type f -name '*.h' -exec cp {} "$BUILD_DIR/Headers/" \;
+
+          echo "Copying all other files to Resources..."
+          find . -type f ! -name '*.cpp' ! -name '*.cxx' ! -name '*.cc' ! -name '*.c' ! -name '*.m' ! -name '*.mm' ! -name '*.h' \
+            -exec cp --parents {} "$BUILD_DIR/Resources/" \;
 
           echo "Setting up symlinks..."
-          ln -sfn A "$FRAMEWORK_DIR/Versions/Current"
-          ln -sfn Versions/Current/$FRAMEWORK_NAME "$FRAMEWORK_DIR/$FRAMEWORK_NAME"
-          ln -sfn Versions/Current/Headers "$FRAMEWORK_DIR/Headers"
+          ln -sfn A "$BUILD_DIR/Versions/Current"
+          ln -sfn Versions/Current/$FRAMEWORK_NAME "$BUILD_DIR/$FRAMEWORK_NAME"
+          ln -sfn Versions/Current/Headers "$BUILD_DIR/Headers"
+          ln -sfn Versions/Current/Resources "$BUILD_DIR/Resources"
 
       - name: List generated framework
         run: ls -R build
