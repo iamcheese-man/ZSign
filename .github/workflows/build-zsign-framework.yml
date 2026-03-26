@@ -1,42 +1,136 @@
 name: Build ZSign
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: macos-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Install Homebrew OpenSSL
-        run: brew install openssl@3
+      - name: Ensure OpenSSL exists
+        run: brew install openssl@3 || true
 
-      - name: Set environment variables
-        run: |
-          echo "OPENSSL_PREFIX=$(brew --prefix openssl@3)" >> $GITHUB_ENV
-          echo "SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)" >> $GITHUB_ENV
-
-      - name: Compile ZSign
+      - name: Build ZSign
+        shell: bash
         run: |
           set -euxo pipefail
 
-          # Collect all include directories recursively
-          INCLUDE_DIRS=$(find . -type d ! -path "./.github/*" -exec printf " -I%s" {} \;)
+          OPENSSL_PREFIX="$(brew --prefix openssl@3)"
+          SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
 
-          # Collect all source files recursively
-          SRC_FILES=$(find . -type f ! -path "./.github/*" \( -name '*.cpp' -o -name '*.c' -o -name '*.cxx' -o -name '*.cc' -o -name '*.mm' -o -name '*.m' \))
+          echo "OPENSSL_PREFIX=$OPENSSL_PREFIX"
+          echo "SDK_PATH=$SDK_PATH"
 
-          echo "Compiling ZSign with sources:"
-          echo "$SRC_FILES"
+          echo "=== Finding source files across entire repo ==="
+          find . \
+            \( -path "./.git" -o -path "./.git/*" -o -path "./.github" -o -path "./.github/*" \) -prune \
+            -o \
+            -type f \
+            \( -name "*.cpp" -o -name "*.cc" -o -name "*.cxx" -o -name "*.c" -o -name "*.mm" -o -name "*.m" \) \
+            -print > sources.txt
 
-          clang++ -std=c++17 -fobjc-arc -arch arm64 \
-            -isysroot "$SDK_PATH" -miphoneos-version-min=14.0 \
-            -dynamiclib -install_name @rpath/ZSign.framework/ZSign \
-            $INCLUDE_DIRS -I"$OPENSSL_PREFIX/include" \
-            -L"$OPENSSL_PREFIX/lib" -lssl -lcrypto \
-            -framework Foundation -framework Security -framework CoreFoundation \
-            $SRC_FILES -o ZSign
+          echo "=== Source files ==="
+          cat sources.txt
+
+          echo "=== Finding all header directories across entire repo ==="
+          find . \
+            \( -path "./.git" -o -path "./.git/*" -o -path "./.github" -o -path "./.github/*" \) -prune \
+            -o \
+            -type f \
+            \( -name "*.h" -o -name "*.hpp" \) \
+            -print | xargs -I{} dirname "{}" | sort -u > include_dirs.txt
+
+          echo "=== Header dirs ==="
+          cat include_dirs.txt
+
+          INCLUDE_FLAGS=""
+          while IFS= read -r dir; do
+            INCLUDE_FLAGS="$INCLUDE_FLAGS -I$dir"
+          done < include_dirs.txt
+
+          INCLUDE_FLAGS="$INCLUDE_FLAGS -I$OPENSSL_PREFIX/include"
+
+          echo "=== Include flags ==="
+          echo "$INCLUDE_FLAGS"
+
+          echo "=== Checking for timer.h ==="
+          find . \
+            \( -path "./.git" -o -path "./.git/*" -o -path "./.github" -o -path "./.github/*" \) -prune \
+            -o \
+            -type f \
+            -name "timer.h" \
+            -print
+
+          echo "=== Checking for openssl/ocsp.h ==="
+          ls -l "$OPENSSL_PREFIX/include/openssl/ocsp.h"
+
+          echo "=== Compiling ==="
+          clang++ \
+            -std=c++17 \
+            -fobjc-arc \
+            -arch arm64 \
+            -isysroot "$SDK_PATH" \
+            -miphoneos-version-min=14.0 \
+            -dynamiclib \
+            -install_name @rpath/ZSign.framework/ZSign \
+            -Wno-macro-redefined \
+            $INCLUDE_FLAGS \
+            -L"$OPENSSL_PREFIX/lib" \
+            -lssl \
+            -lcrypto \
+            -framework Foundation \
+            -framework Security \
+            -framework CoreFoundation \
+            $(cat sources.txt) \
+            -o ZSign
+
+      - name: Package framework
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          mkdir -p ZSign.framework/Headers
+          cp ZSign ZSign.framework/ZSign
+
+          find . \
+            \( -path "./.git" -o -path "./.git/*" -o -path "./.github" -o -path "./.github/*" \) -prune \
+            -o \
+            -type f \
+            \( -name "*.h" -o -name "*.hpp" \) \
+            -exec cp {} ZSign.framework/Headers/ \;
+
+          cat > ZSign.framework/Info.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>ZSign</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.ziacml.helper.zsign</string>
+              <key>CFBundleName</key>
+              <string>ZSign</string>
+              <key>CFBundlePackageType</key>
+              <string>FMWK</string>
+              <key>CFBundleShortVersionString</key>
+              <string>1.0</string>
+              <key>CFBundleVersion</key>
+              <string>1</string>
+              <key>MinimumOSVersion</key>
+              <string>14.0</string>
+          </dict>
+          </plist>
+          EOF
+
+          codesign --force --sign - ZSign.framework
+          zip -r ZSign.framework.zip ZSign.framework
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZSign.framework
+          path: ZSign.framework.zip
