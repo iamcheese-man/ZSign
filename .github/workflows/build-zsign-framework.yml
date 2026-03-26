@@ -13,7 +13,12 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
-        
+
+      - name: Install OpenSSL
+        run: |
+          brew update
+          brew install openssl
+
       - name: Build Framework
         run: |
           OPENSSL_INC=$(brew --prefix openssl)/include
@@ -23,29 +28,38 @@ jobs:
           mkdir -p "$BUILD_DIR/Headers"
           mkdir -p "$BUILD_DIR/Versions/A"
           mkdir -p "$BUILD_DIR/Resources"
+
           echo "Finding all source files in root..."
           SRC_FILES=$(find . -maxdepth 1 -type f \( -name '*.cpp' -o -name '*.c' -o -name '*.cc' -o -name '*.cxx' -o -name '*.m' -o -name '*.mm' \))
+
           echo "Compiling sources..."
           clang++ -std=c++20 -fobjc-arc -dynamiclib $SRC_FILES \
               -I. -I$OPENSSL_INC \
               -L"$OPENSSL_LIB" -lssl -lcrypto -framework Foundation \
               -arch arm64 \
               -o "$BUILD_DIR/Versions/A/$FRAMEWORK_NAME"
+
           echo "Copying headers..."
           find . -maxdepth 1 -type f -name '*.h' -exec cp {} "$BUILD_DIR/Headers/" \;
+
           echo "Copying other files to Resources..."
           find . -maxdepth 1 -type f ! -name '*.cpp' ! -name '*.c' ! -name '*.cc' ! -name '*.cxx' ! -name '*.m' ! -name '*.mm' ! -name '*.h' \
             -exec cp --parents {} "$BUILD_DIR/Resources/" \;
+
           echo "Setting up framework symlinks..."
           ln -sfn A "$BUILD_DIR/Versions/Current"
           ln -sfn Versions/Current/$FRAMEWORK_NAME "$BUILD_DIR/$FRAMEWORK_NAME"
           ln -sfn Versions/Current/Headers "$BUILD_DIR/Headers"
           ln -sfn Versions/Current/Resources "$BUILD_DIR/Resources"
-      - name: List built framework
-        run: ls -R build
 
-      - name: Upload Framework as Artifact
+      - name: Zip the framework
+        run: |
+          cd build
+          ditto -c -k --sequesterRsrc --keepParent ZSign.framework ZSign.framework.zip
+          ls -lh ZSign.framework.zip
+
+      - name: Upload Framework Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ZSign
-          path: build/ZSign.framework
+          name: ZSign.framework
+          path: build/ZSign.framework.zip
