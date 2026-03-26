@@ -22,7 +22,7 @@ jobs:
           cp openssl-ios-src/iphoneos/lib/libssl.a openssl-ios/lib/libssl.a
           cp -r openssl-ios-src/iphoneos/include/openssl openssl-ios/include/openssl
 
-      - name: Build Framework
+      - name: Build ZSign Framework
         run: |
           OPENSSL_PREFIX="$PWD/openssl-ios"
           FRAMEWORK_NAME="ZSign"
@@ -31,14 +31,11 @@ jobs:
 
           mkdir -p "$BUILD_DIR/Headers"
 
-          echo "Finding source files..."
           SRC_FILES=$(find . -maxdepth 1 -type f \( \
             -name '*.cpp' -o -name '*.c' -o -name '*.cc' -o \
             -name '*.cxx' -o -name '*.m' -o -name '*.mm' \
           \))
-          echo "$SRC_FILES"
 
-          echo "Compiling..."
           clang++ \
             -std=c++20 \
             -fobjc-arc \
@@ -55,11 +52,9 @@ jobs:
             $SRC_FILES \
             -o "$BUILD_DIR/$FRAMEWORK_NAME"
 
-          echo "Copying headers..."
           find . -maxdepth 1 -type f \( -name '*.h' -o -name '*.hpp' \) \
             -exec cp {} "$BUILD_DIR/Headers/" \;
 
-          echo "Generating Info.plist..."
           cat > "$BUILD_DIR/Info.plist" << 'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -68,7 +63,7 @@ jobs:
               <key>CFBundleExecutable</key>
               <string>ZSign</string>
               <key>CFBundleIdentifier</key>
-              <string>com.lc.zsign</string>
+              <string>com.zziacm.helper.zsign</string>
               <key>CFBundleName</key>
               <string>ZSign</string>
               <key>CFBundlePackageType</key>
@@ -83,14 +78,20 @@ jobs:
           </plist>
           PLIST
 
-          echo "Codesigning..."
           codesign --force --sign - "$BUILD_DIR"
+
+      # âââââââââââââââââââââââââââââââââââââââââââââ
+      # Add your dylib build steps below here.
+      # ZSign.framework is at: $PWD/build/ZSign.framework
+      # Reference it with:
+      #   -F $PWD/build -framework ZSign
+      #   -I $PWD/build/ZSign.framework/Headers
+      # âââââââââââââââââââââââââââââââââââââââââââââ
 
       - name: Zip Framework
         run: |
           cd build
           ditto -c -k --sequesterRsrc --keepParent ZSign.framework ZSign.framework.zip
-          ls -lh ZSign.framework.zip
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
