@@ -20,34 +20,23 @@ jobs:
           brew update
           brew install openssl
 
-      - name: Build zsign.framework
-        shell: bash
+      - name: Build zsign.framework (original compile)
         run: |
-          set -e
-
-          OPENSSL_PREFIX="$(brew --prefix openssl)"
-          OPENSSL_INC="$OPENSSL_PREFIX/include"
-          OPENSSL_LIB="$OPENSSL_PREFIX/lib"
+          # Everything here is exactly like your previous working command
+          OPENSSL_INC=$(brew --prefix openssl)/include
+          OPENSSL_LIB=$(brew --prefix openssl)/lib
 
           FRAMEWORK_NAME="zsign"
-          BUILD_ROOT="$PWD/build"
-          FRAMEWORK_DIR="$BUILD_ROOT/$FRAMEWORK_NAME.framework"
-          BINARY_PATH="$FRAMEWORK_DIR/Versions/A/$FRAMEWORK_NAME"
-          HEADERS_DIR="$FRAMEWORK_DIR/Versions/A/Headers"
-          RESOURCES_DIR="$FRAMEWORK_DIR/Versions/A/Resources"
+          BUILD_DIR="$PWD/build/$FRAMEWORK_NAME.framework"
 
-          mkdir -p "$HEADERS_DIR"
-          mkdir -p "$RESOURCES_DIR"
+          mkdir -p "$BUILD_DIR/Versions/A"
+          mkdir -p "$BUILD_DIR/Versions/A/Headers"
+          mkdir -p "$BUILD_DIR/Versions/A/Resources"
 
-          echo "Compiling zsign sources..."
-
+          # Use the same source files exactly as before (order matters)
           clang++ \
-            -std=c++20 \
-            -fobjc-arc \
-            -dynamiclib \
+            -std=c++20 -fobjc-arc -dynamiclib \
             -arch arm64 \
-            -I. \
-            -I"$OPENSSL_INC" \
             Utils.mm \
             archo.cpp \
             base64.cpp \
@@ -60,52 +49,29 @@ jobs:
             util.cpp \
             zsign.mm \
             zsigner.mm \
-            -L"$OPENSSL_LIB" \
-            -lssl \
-            -lcrypto \
-            -framework Foundation \
-            -o "$BINARY_PATH"
+            -I. -I"$OPENSSL_INC" \
+            -L"$OPENSSL_LIB" -lssl -lcrypto -framework Foundation \
+            -o "$BUILD_DIR/Versions/A/$FRAMEWORK_NAME"
 
-          echo "Copying headers..."
-          cp archo.h "$HEADERS_DIR/" || true
-          cp base64.h "$HEADERS_DIR/" || true
-          cp bundle.h "$HEADERS_DIR/" || true
-          cp common.h "$HEADERS_DIR/" || true
-          cp fs.h "$HEADERS_DIR/" || true
-          cp json.h "$HEADERS_DIR/" || true
-          cp log.h "$HEADERS_DIR/" || true
-          cp mach-o.h "$HEADERS_DIR/" || true
-          cp macho.h "$HEADERS_DIR/" || true
-          cp openssl.h "$HEADERS_DIR/" || true
-          cp sha.h "$HEADERS_DIR/" || true
-          cp signing.h "$HEADERS_DIR/" || true
-          cp timer.h "$HEADERS_DIR/" || true
-          cp util.h "$HEADERS_DIR/" || true
-          cp Utils.hpp "$HEADERS_DIR/" || true
-          cp zsign.hpp "$HEADERS_DIR/" || true
-          cp zsigner.h "$HEADERS_DIR/" || true
+          # Copy headers (exactly as before)
+          cp *.h "$BUILD_DIR/Versions/A/Headers/" || true
+          cp *.hpp "$BUILD_DIR/Versions/A/Headers/" || true
 
-          echo "Copying extra resources..."
-          cp README.md "$RESOURCES_DIR/" || true
+          # Copy other resources
+          cp README.md "$BUILD_DIR/Versions/A/Resources/" || true
 
-          echo "Creating framework symlinks..."
-          mkdir -p "$FRAMEWORK_DIR/Versions"
-          ln -sfn A "$FRAMEWORK_DIR/Versions/Current"
-          ln -sfn Versions/Current/$FRAMEWORK_NAME "$FRAMEWORK_DIR/$FRAMEWORK_NAME"
-          ln -sfn Versions/Current/Headers "$FRAMEWORK_DIR/Headers"
-          ln -sfn Versions/Current/Resources "$FRAMEWORK_DIR/Resources"
-
-          echo "Built framework structure:"
-          ls -R "$FRAMEWORK_DIR"
+          # Set symlinks
+          ln -sfn A "$BUILD_DIR/Versions/Current"
+          ln -sfn Versions/Current/$FRAMEWORK_NAME "$BUILD_DIR/$FRAMEWORK_NAME"
+          ln -sfn Versions/Current/Headers "$BUILD_DIR/Headers"
+          ln -sfn Versions/Current/Resources "$BUILD_DIR/Resources"
 
       - name: Zip zsign.framework
-        shell: bash
         run: |
           cd build
           ditto -c -k --sequesterRsrc --keepParent zsign.framework zsign.framework.zip
-          ls -lah
 
-      - name: Upload zsign.framework.zip artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: zsign.framework
