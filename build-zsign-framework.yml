@@ -1,10 +1,6 @@
 name: Build ZSign Framework
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'zsign/**'
   workflow_dispatch:
 
 jobs:
