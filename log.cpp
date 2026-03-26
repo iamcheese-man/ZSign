@@ -1,5 +1,5 @@
 #include "log.h"
-#include "../Utils.hpp"
+#include "Utils.hpp"
 
 int ZLog::g_nLogLevel = ZLog::E_INFO;
 
