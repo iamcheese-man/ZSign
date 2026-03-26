@@ -2,8 +2,7 @@ name: Build ZSign
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   pull_request:
 
 jobs:
@@ -11,41 +10,33 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      - name: Install Homebrew dependencies
-        run: |
-          brew update
-          brew install openssl@3
+      - name: Install Homebrew OpenSSL
+        run: brew install openssl@3
 
       - name: Set environment variables
         run: |
-          export OPENSSL_PREFIX=$(brew --prefix openssl@3)
-          export SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
-          echo "OPENSSL_PREFIX=$OPENSSL_PREFIX" >> $GITHUB_ENV
-          echo "SDK_PATH=$SDK_PATH" >> $GITHUB_ENV
+          echo "OPENSSL_PREFIX=$(brew --prefix openssl@3)" >> $GITHUB_ENV
+          echo "SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)" >> $GITHUB_ENV
 
-      - name: Build ZSign
+      - name: Compile ZSign
         run: |
           set -euxo pipefail
 
-          # Include all directories
-          INCLUDE_DIRS=$(find . -type d -not -path "./.github/*" -print0 | xargs -0 -I {} echo -I{} | tr '\n' ' ')
-          INCLUDE_DIRS="$INCLUDE_DIRS -I. -I./common"
+          # Collect all include directories recursively
+          INCLUDE_DIRS=$(find . -type d ! -path "./.github/*" -exec printf " -I%s" {} \;)
 
-          # Find all source files
-          SRC_FILES=$(find . -type f '!' -path "./.github/*" '(' -name '*.cpp' -o -name '*.c' -o -name '*.cxx' -o -name '*.cc' -o -name '*.mm' -o -name '*.m' ')' )
+          # Collect all source files recursively
+          SRC_FILES=$(find . -type f ! -path "./.github/*" \( -name '*.cpp' -o -name '*.c' -o -name '*.cxx' -o -name '*.cc' -o -name '*.mm' -o -name '*.m' \))
 
           echo "Compiling ZSign with sources:"
           echo "$SRC_FILES"
 
-          # Compile dynamic library
           clang++ -std=c++17 -fobjc-arc -arch arm64 \
             -isysroot "$SDK_PATH" -miphoneos-version-min=14.0 \
             -dynamiclib -install_name @rpath/ZSign.framework/ZSign \
-            $INCLUDE_DIRS \
+            $INCLUDE_DIRS -I"$OPENSSL_PREFIX/include" \
             -L"$OPENSSL_PREFIX/lib" -lssl -lcrypto \
             -framework Foundation -framework Security -framework CoreFoundation \
-            $SRC_FILES \
-            -o ZSign
+            $SRC_FILES -o ZSign
