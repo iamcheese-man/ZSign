@@ -1,136 +1,49 @@
-name: Build ZSign
+name: Build Framework
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
   build:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v3
 
-      - name: Ensure OpenSSL exists
-        run: brew install openssl@3 || true
-
-      - name: Build ZSign
-        shell: bash
+      - name: Install OpenSSL
         run: |
-          set -euxo pipefail
+          brew update
+          brew install openssl
 
-          OPENSSL_PREFIX="$(brew --prefix openssl@3)"
-          SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
-
-          echo "OPENSSL_PREFIX=$OPENSSL_PREFIX"
-          echo "SDK_PATH=$SDK_PATH"
-
-          echo "=== Finding source files across entire repo ==="
-          find . \
-            \( -path "./.git" -o -path "./.git/*" -o -path "./.github" -o -path "./.github/*" \) -prune \
-            -o \
-            -type f \
-            \( -name "*.cpp" -o -name "*.cc" -o -name "*.cxx" -o -name "*.c" -o -name "*.mm" -o -name "*.m" \) \
-            -print > sources.txt
-
-          echo "=== Source files ==="
-          cat sources.txt
-
-          echo "=== Finding all header directories across entire repo ==="
-          find . \
-            \( -path "./.git" -o -path "./.git/*" -o -path "./.github" -o -path "./.github/*" \) -prune \
-            -o \
-            -type f \
-            \( -name "*.h" -o -name "*.hpp" \) \
-            -print | xargs -I{} dirname "{}" | sort -u > include_dirs.txt
-
-          echo "=== Header dirs ==="
-          cat include_dirs.txt
-
-          INCLUDE_FLAGS=""
-          while IFS= read -r dir; do
-            INCLUDE_FLAGS="$INCLUDE_FLAGS -I$dir"
-          done < include_dirs.txt
-
-          INCLUDE_FLAGS="$INCLUDE_FLAGS -I$OPENSSL_PREFIX/include"
-
-          echo "=== Include flags ==="
-          echo "$INCLUDE_FLAGS"
-
-          echo "=== Checking for timer.h ==="
-          find . \
-            \( -path "./.git" -o -path "./.git/*" -o -path "./.github" -o -path "./.github/*" \) -prune \
-            -o \
-            -type f \
-            -name "timer.h" \
-            -print
-
-          echo "=== Checking for openssl/ocsp.h ==="
-          ls -l "$OPENSSL_PREFIX/include/openssl/ocsp.h"
-
-          echo "=== Compiling ==="
-          clang++ \
-            -std=c++17 \
-            -fobjc-arc \
-            -arch arm64 \
-            -isysroot "$SDK_PATH" \
-            -miphoneos-version-min=14.0 \
-            -dynamiclib \
-            -install_name @rpath/ZSign.framework/ZSign \
-            -Wno-macro-redefined \
-            $INCLUDE_FLAGS \
-            -L"$OPENSSL_PREFIX/lib" \
-            -lssl \
-            -lcrypto \
-            -framework Foundation \
-            -framework Security \
-            -framework CoreFoundation \
-            $(cat sources.txt) \
-            -o ZSign
-
-      - name: Package framework
-        shell: bash
+      - name: Compile all files into a single Framework
         run: |
-          set -euxo pipefail
+          OPENSSL_INC=$(brew --prefix openssl)/include
+          OPENSSL_LIB=$(brew --prefix openssl)/lib
 
-          mkdir -p ZSign.framework/Headers
-          cp ZSign ZSign.framework/ZSign
+          FRAMEWORK_NAME="ZSign"
+          FRAMEWORK_DIR="$PWD/build/$FRAMEWORK_NAME.framework"
 
-          find . \
-            \( -path "./.git" -o -path "./.git/*" -o -path "./.github" -o -path "./.github/*" \) -prune \
-            -o \
-            -type f \
-            \( -name "*.h" -o -name "*.hpp" \) \
-            -exec cp {} ZSign.framework/Headers/ \;
+          mkdir -p "$FRAMEWORK_DIR/Headers"
+          mkdir -p "$FRAMEWORK_DIR/Versions/A"
 
-          cat > ZSign.framework/Info.plist << 'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>CFBundleExecutable</key>
-              <string>ZSign</string>
-              <key>CFBundleIdentifier</key>
-              <string>com.ziacml.helper.zsign</string>
-              <key>CFBundleName</key>
-              <string>ZSign</string>
-              <key>CFBundlePackageType</key>
-              <string>FMWK</string>
-              <key>CFBundleShortVersionString</key>
-              <string>1.0</string>
-              <key>CFBundleVersion</key>
-              <string>1</string>
-              <key>MinimumOSVersion</key>
-              <string>14.0</string>
-          </dict>
-          </plist>
-          EOF
+          echo "Collecting all files recursively..."
+          ALL_FILES=$(find . -type f)
 
-          codesign --force --sign - ZSign.framework
-          zip -r ZSign.framework.zip ZSign.framework
+          echo "Compiling into $FRAMEWORK_NAME.framework..."
+          clang++ -std=c++20 -dynamiclib -o "$FRAMEWORK_DIR/Versions/A/$FRAMEWORK_NAME" $ALL_FILES \
+              -I"$OPENSSL_INC" -L"$OPENSSL_LIB" -lssl -lcrypto -framework Foundation
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ZSign.framework
-          path: ZSign.framework.zip
+          echo "Copying headers..."
+          find . -type f -name '*.h' -exec cp {} "$FRAMEWORK_DIR/Headers/" \;
+
+          echo "Setting up symlinks..."
+          ln -sfn A "$FRAMEWORK_DIR/Versions/Current"
+          ln -sfn Versions/Current/$FRAMEWORK_NAME "$FRAMEWORK_DIR/$FRAMEWORK_NAME"
+          ln -sfn Versions/Current/Headers "$FRAMEWORK_DIR/Headers"
+
+      - name: List generated framework
+        run: ls -R build
