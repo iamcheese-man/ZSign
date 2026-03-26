@@ -17,17 +17,10 @@ jobs:
       - name: Get prebuilt OpenSSL for iOS
         run: |
           git clone --depth 1 https://github.com/krzyzanowskim/OpenSSL.git openssl-ios-src
-          echo "Repo structure:"
-          find openssl-ios-src -name "*.a" | head -20
-          find openssl-ios-src -name "openssl" -type d | head -5
           mkdir -p openssl-ios/lib openssl-ios/include
-          CRYPTO=$(find openssl-ios-src -name "libcrypto*.a" | grep -i iphone | head -1)
-          SSL=$(find openssl-ios-src -name "libssl*.a" | grep -i iphone | head -1)
-          HEADERS=$(find openssl-ios-src -type d -name "openssl" | head -1)
-          echo "Found: $CRYPTO $SSL $HEADERS"
-          cp "$CRYPTO" openssl-ios/lib/libcrypto.a
-          cp "$SSL" openssl-ios/lib/libssl.a
-          cp -r "$HEADERS" openssl-ios/include/openssl
+          cp openssl-ios-src/iphoneos/lib/libcrypto.a openssl-ios/lib/libcrypto.a
+          cp openssl-ios-src/iphoneos/lib/libssl.a openssl-ios/lib/libssl.a
+          cp -r openssl-ios-src/iphoneos/include/openssl openssl-ios/include/openssl
 
       - name: Build Framework
         run: |
