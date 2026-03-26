@@ -1,47 +1,54 @@
 name: Build Framework
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
   build:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout Repo
+      - name: Checkout Repository
         uses: actions/checkout@v3
+
+      - name: Install OpenSSL
+        run: |
+          brew update
+          brew install openssl
 
       - name: Build Framework
         run: |
           OPENSSL_INC=$(brew --prefix openssl)/include
           OPENSSL_LIB=$(brew --prefix openssl)/lib
 
-          FRAMEWORK_NAME="MyFramework"
+          FRAMEWORK_NAME="ZSign
           BUILD_DIR="$PWD/build/$FRAMEWORK_NAME.framework"
 
           mkdir -p "$BUILD_DIR/Headers"
           mkdir -p "$BUILD_DIR/Versions/A"
           mkdir -p "$BUILD_DIR/Resources"
 
-          # Include root and the single subfolder
-          INCLUDE_PATHS="-I. -Icommon -I$OPENSSL_INC"
+          echo "Finding all source files in root..."
+          SRC_FILES=$(find . -maxdepth 1 -type f \( -name '*.cpp' -o -name '*.c' -o -name '*.cc' -o -name '*.cxx' -o -name '*.m' -o -name '*.mm' \))
 
-          # Find all source files in root and subfolder
-          SRC_FILES=$(find . -maxdepth 2 -type f \( -name '*.cpp' -o -name '*.c' -o -name '*.cc' -o -name '*.cxx' -o -name '*.m' -o -name '*.mm' \))
-
-          # Compile dynamic library
-          clang++ -std=c++20 -fobjc-arc -dynamiclib $SRC_FILES $INCLUDE_PATHS \
+          echo "Compiling sources..."
+          clang++ -std=c++20 -fobjc-arc -dynamiclib $SRC_FILES \
+              -I. -I$OPENSSL_INC \
               -L"$OPENSSL_LIB" -lssl -lcrypto -framework Foundation \
+              -arch arm64 \
               -o "$BUILD_DIR/Versions/A/$FRAMEWORK_NAME"
 
-          # Copy headers
-          find . -maxdepth 2 -type f -name '*.h' -exec cp {} "$BUILD_DIR/Headers/" \;
+          echo "Copying headers..."
+          find . -maxdepth 1 -type f -name '*.h' -exec cp {} "$BUILD_DIR/Headers/" \;
 
-          # Copy all other files to Resources
-          find . -maxdepth 2 -type f ! -name '*.cpp' ! -name '*.c' ! -name '*.cc' ! -name '*.cxx' ! -name '*.m' ! -name '*.mm' ! -name '*.h' \
+          echo "Copying other files to Resources..."
+          find . -maxdepth 1 -type f ! -name '*.cpp' ! -name '*.c' ! -name '*.cc' ! -name '*.cxx' ! -name '*.m' ! -name '*.mm' ! -name '*.h' \
             -exec cp --parents {} "$BUILD_DIR/Resources/" \;
 
-          # Set up symlinks
+          echo "Setting up framework symlinks..."
           ln -sfn A "$BUILD_DIR/Versions/Current"
           ln -sfn Versions/Current/$FRAMEWORK_NAME "$BUILD_DIR/$FRAMEWORK_NAME"
           ln -sfn Versions/Current/Headers "$BUILD_DIR/Headers"
@@ -49,3 +56,9 @@ jobs:
 
       - name: List built framework
         run: ls -R build
+
+      - name: Upload Framework as Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: MyFramework
+          path: build/MyFramework.framework
