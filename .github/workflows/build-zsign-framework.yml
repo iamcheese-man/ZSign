@@ -24,7 +24,7 @@ jobs:
           OPENSSL_INC=$(brew --prefix openssl)/include
           OPENSSL_LIB=$(brew --prefix openssl)/lib
 
-          FRAMEWORK_NAME="ZSign
+          FRAMEWORK_NAME="ZSign"
           BUILD_DIR="$PWD/build/$FRAMEWORK_NAME.framework"
 
           mkdir -p "$BUILD_DIR/Headers"
@@ -58,7 +58,7 @@ jobs:
         run: ls -R build
 
       - name: Upload Framework as Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: MyFramework
+          name: ZSign
           path: build/MyFramework.framework
