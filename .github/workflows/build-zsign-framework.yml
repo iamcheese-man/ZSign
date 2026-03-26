@@ -12,54 +12,48 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install OpenSSL
-        run: brew install openssl
+        run: brew install openssl@3
+
+      - name: Set up environment
+        run: |
+          set -euxo pipefail
+          export OPENSSL_PREFIX=$(brew --prefix openssl@3)
+          export SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
 
       - name: Compile ZSign dylib
         run: |
           set -euxo pipefail
 
-          OPENSSL_PREFIX=$(brew --prefix openssl)
-          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+          # Build list of include paths recursively
+          CPP_INCLUDES=""
+          for dir in $(find . -type d -not -path "./.github/*"); do
+              CPP_INCLUDES="$CPP_INCLUDES -I$dir"
+          done
 
-          # Find ALL source files except .github
-          find . -type f ! -path "./.github/*" \( \
-            -name "*.cpp" -o \
-            -name "*.c" -o \
-            -name "*.cxx" -o \
-            -name "*.cc" -o \
-            -name "*.mm" -o \
-            -name "*.m" \
-          \) -print0 > sources.txt
+          # Find all source files except .github
+          SRC_FILES=$(find . -type f ! -path "./.github/*" \( -name "*.cpp" -o -name "*.c" -o -name "*.cxx" -o -name "*.cc" -o -name "*.mm" -o -name "*.m" \))
 
-          echo "Source files:"
-          tr '\0' '\n' < sources.txt
+          echo "Compiling ZSign with sources:"
+          echo "$SRC_FILES"
 
-          # Compile everything as Objective-C++ (.mm) or C++ 
-          xargs -0 clang++ -std=c++17 -fobjc-arc -arch arm64 \
+          # Compile
+          xargs clang++ -std=c++17 -fobjc-arc -arch arm64 \
             -isysroot "$SDK_PATH" \
             -miphoneos-version-min=14.0 \
             -dynamiclib \
             -install_name @rpath/ZSign.framework/ZSign \
-            -I . -I ./common \
-            -L "$OPENSSL_PREFIX/lib" -lssl -lcrypto \
+            $CPP_INCLUDES \
+            -L"$OPENSSL_PREFIX/lib" -lssl -lcrypto \
             -framework Foundation -framework Security -framework CoreFoundation \
-            -o ZSign < sources.txt
+            -o ZSign <<<"$SRC_FILES"
 
       - name: Package as framework
         run: |
-          set -euxo pipefail
           mkdir -p ZSign.framework/Headers
-          
-          # Binary
           cp ZSign ZSign.framework/ZSign
+          find . -type f -name "*.h" ! -path "./.github/*" -exec cp {} ZSign.framework/Headers/ \; || true
 
-          # Headers: copy all except .github
-          find . -type f ! -path "./.github/*" \( -name "*.h" -o -name "*.hpp" \) -print0 | while IFS= read -r -d '' file; do
-            cp "$file" ZSign.framework/Headers/
-          done
-
-          # Info.plist
-          cat > ZSign.framework/Info.plist << 'EOF'
+          cat > ZSign.framework/Info.plist << EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -85,7 +79,7 @@ jobs:
       - name: Codesign
         run: codesign --force --sign - ZSign.framework
 
-      - name: Zip
+      - name: Zip framework
         run: zip -r ZSign.framework.zip ZSign.framework
 
       - name: Upload artifact
@@ -93,13 +87,3 @@ jobs:
         with:
           name: ZSign.framework
           path: ZSign.framework.zip
-
-      - name: Create release
-        if: github.event_name == 'push'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: zsign-${{ github.sha }}
-          name: ZSign Framework
-          files: ZSign.framework.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
