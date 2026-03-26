@@ -11,7 +11,7 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout Repo
         uses: actions/checkout@v3
 
       - name: Install OpenSSL
@@ -19,7 +19,7 @@ jobs:
           brew update
           brew install openssl
 
-      - name: Build framework including C, C++, Obj-C, Obj-C++
+      - name: Build framework
         run: |
           OPENSSL_INC=$(brew --prefix openssl)/include
           OPENSSL_LIB=$(brew --prefix openssl)/lib
@@ -31,33 +31,28 @@ jobs:
           mkdir -p "$BUILD_DIR/Versions/A"
           mkdir -p "$BUILD_DIR/Resources"
 
-          # Include OpenSSL and all repo directories for headers
-          INCLUDE_PATHS=$(find . -type d | sed 's/^/-I/')
-          INCLUDE_PATHS="$INCLUDE_PATHS -I$OPENSSL_INC"
+          # Only root and the single subfolder as include paths
+          SUBFOLDER=$(find . -mindepth 1 -maxdepth 1 -type d | head -n1)
+          INCLUDE_PATHS="-I. -I$SUBFOLDER -I$OPENSSL_INC"
 
-          echo "Finding all compilable source files..."
-          SRC_FILES=$(find . -type f \( -name '*.cpp' -o -name '*.cxx' -o -name '*.cc' -o -name '*.c' -o -name '*.m' -o -name '*.mm' \))
+          echo "Finding all source files..."
+          SRC_FILES=$(find . -maxdepth 2 -type f \( -name '*.cpp' -o -name '*.cxx' -o -name '*.cc' -o -name '*.c' -o -name '*.m' -o -name '*.mm' \))
 
-          if [ -z "$SRC_FILES" ]; then
-            echo "No compilable source files found."
-          else
-            echo "Compiling sources..."
-            clang++ -std=c++20 -fobjc-arc -dynamiclib -o "$BUILD_DIR/Versions/A/$FRAMEWORK_NAME" $SRC_FILES \
-              $INCLUDE_PATHS -L"$OPENSSL_LIB" -lssl -lcrypto -framework Foundation
-          fi
+          echo "Compiling sources..."
+          clang++ -std=c++20 -fobjc-arc -dynamiclib $SRC_FILES $INCLUDE_PATHS -L"$OPENSSL_LIB" -lssl -lcrypto -framework Foundation -o "$BUILD_DIR/Versions/A/$FRAMEWORK_NAME"
 
           echo "Copying headers..."
-          find . -type f -name '*.h' -exec cp {} "$BUILD_DIR/Headers/" \;
+          find . -maxdepth 2 -type f -name '*.h' -exec cp {} "$BUILD_DIR/Headers/" \;
 
-          echo "Copying all other files to Resources..."
-          find . -type f ! -name '*.cpp' ! -name '*.cxx' ! -name '*.cc' ! -name '*.c' ! -name '*.m' ! -name '*.mm' ! -name '*.h' \
+          echo "Copying other files to Resources..."
+          find . -maxdepth 2 -type f ! -name '*.cpp' ! -name '*.cxx' ! -name '*.cc' ! -name '*.c' ! -name '*.m' ! -name '*.mm' ! -name '*.h' \
             -exec cp --parents {} "$BUILD_DIR/Resources/" \;
 
-          echo "Setting up symlinks..."
+          echo "Setting up framework symlinks..."
           ln -sfn A "$BUILD_DIR/Versions/Current"
           ln -sfn Versions/Current/$FRAMEWORK_NAME "$BUILD_DIR/$FRAMEWORK_NAME"
           ln -sfn Versions/Current/Headers "$BUILD_DIR/Headers"
           ln -sfn Versions/Current/Resources "$BUILD_DIR/Resources"
 
-      - name: List generated framework
+      - name: List built framework
         run: ls -R build
