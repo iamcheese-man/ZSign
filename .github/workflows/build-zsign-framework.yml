@@ -14,15 +14,13 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Build OpenSSL for iOS
+      - name: Get prebuilt OpenSSL for iOS
         run: |
-          git clone --depth 1 https://github.com/x2on/OpenSSL-for-iPhone.git
-          cd OpenSSL-for-iPhone
-          ./build-libssl.sh --version=3.3.0 --archs="arm64" --sdk=iphoneos
-          mkdir -p ../openssl-ios/lib ../openssl-ios/include
-          cp lib/libssl-iOS.a ../openssl-ios/lib/libssl.a
-          cp lib/libcrypto-iOS.a ../openssl-ios/lib/libcrypto.a
-          cp -r include/openssl ../openssl-ios/include/openssl
+          git clone --depth 1 https://github.com/krzyzanowskim/OpenSSL.git openssl-ios-src
+          mkdir -p openssl-ios/lib openssl-ios/include
+          cp openssl-ios-src/OpenSSL/Libraries/libcrypto.a openssl-ios/lib/libcrypto.a
+          cp openssl-ios-src/OpenSSL/Libraries/libssl.a openssl-ios/lib/libssl.a
+          cp -r openssl-ios-src/OpenSSL/include/openssl openssl-ios/include/openssl
 
       - name: Build Framework
         run: |
@@ -31,7 +29,6 @@ jobs:
           BUILD_DIR="$PWD/build/$FRAMEWORK_NAME.framework"
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
 
-          # Flat iOS framework structure (no Versions/)
           mkdir -p "$BUILD_DIR/Headers"
 
           echo "Finding source files..."
@@ -63,17 +60,17 @@ jobs:
             -exec cp {} "$BUILD_DIR/Headers/" \;
 
           echo "Generating Info.plist..."
-          cat > "$BUILD_DIR/Info.plist" << EOF
+          cat > "$BUILD_DIR/Info.plist" << 'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
               <key>CFBundleExecutable</key>
-              <string>$FRAMEWORK_NAME</string>
+              <string>ZSign</string>
               <key>CFBundleIdentifier</key>
-              <string>com.zziacm.helper.zsign</string>
+              <string>com.lc.zsign</string>
               <key>CFBundleName</key>
-              <string>$FRAMEWORK_NAME</string>
+              <string>ZSign</string>
               <key>CFBundlePackageType</key>
               <string>FMWK</string>
               <key>CFBundleShortVersionString</key>
@@ -84,7 +81,7 @@ jobs:
               <string>14.0</string>
           </dict>
           </plist>
-          EOF
+          PLIST
 
           echo "Codesigning..."
           codesign --force --sign - "$BUILD_DIR"
