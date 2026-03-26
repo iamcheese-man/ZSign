@@ -1,10 +1,6 @@
 name: Build ZSign Framework
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'zsign/**'
   workflow_dispatch:
 
 jobs:
@@ -20,36 +16,58 @@ jobs:
 
       - name: Compile ZSign dylib
         run: |
+          set -euxo pipefail
+
           OPENSSL_PREFIX=$(brew --prefix openssl)
+          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
 
-          CPP_FILES=$(find zsign/ -name "*.cpp")
+          # Find ALL source files except .github
+          find . -type f ! -path "./.github/*" \( \
+            -name "*.cpp" -o \
+            -name "*.cc" -o \
+            -name "*.cxx" -o \
+            -name "*.c" -o \
+            -name "*.mm" -o \
+            -name "*.m" \
+          \) -print0 > sources.txt
 
-          clang++ \
+          echo "Source files:"
+          tr '\0' '\n' < sources.txt
+
+          xargs -0 clang++ \
             -std=c++17 \
+            -fobjc-arc \
             -arch arm64 \
-            -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
+            -isysroot "$SDK_PATH" \
             -miphoneos-version-min=14.0 \
             -dynamiclib \
             -install_name @rpath/ZSign.framework/ZSign \
-            -I zsign/ \
+            -I . \
             -I "$OPENSSL_PREFIX/include" \
-            "$OPENSSL_PREFIX/lib/libssl.a" \
-            "$OPENSSL_PREFIX/lib/libcrypto.a" \
-            $CPP_FILES \
-            -o ZSign
+            -L "$OPENSSL_PREFIX/lib" \
+            -lssl \
+            -lcrypto \
+            -framework Foundation \
+            -framework Security \
+            -framework CoreFoundation \
+            -o ZSign < sources.txt
 
       - name: Package as framework
         run: |
+          set -euxo pipefail
+
           mkdir -p ZSign.framework/Headers
 
           # Binary
           cp ZSign ZSign.framework/ZSign
 
-          # Headers
-          cp zsign/*.h ZSign.framework/Headers/ 2>/dev/null || true
+          # Headers: copy ALL headers except .github
+          find . -type f ! -path "./.github/*" \( -name "*.h" -o -name "*.hpp" \) -print0 | while IFS= read -r -d '' file; do
+            cp "$file" ZSign.framework/Headers/
+          done
 
           # Info.plist
-          cat > ZSign.framework/Info.plist << EOF
+          cat > ZSign.framework/Info.plist << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -57,7 +75,7 @@ jobs:
               <key>CFBundleExecutable</key>
               <string>ZSign</string>
               <key>CFBundleIdentifier</key>
-              <string>com.lc.zsign</string>
+              <string>com.ziacml.helper.zsign</string>
               <key>CFBundleName</key>
               <string>ZSign</string>
               <key>CFBundlePackageType</key>
