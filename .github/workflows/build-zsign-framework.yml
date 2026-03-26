@@ -14,30 +14,31 @@ jobs:
       - name: Install OpenSSL
         run: brew install openssl@3
 
-      - name: Set up environment
-        run: |
-          set -euxo pipefail
-          export OPENSSL_PREFIX=$(brew --prefix openssl@3)
-          export SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
-
-      - name: Compile ZSign dylib
+      - name: Compile ZSign dylib/framework
         run: |
           set -euxo pipefail
 
-          # Build list of include paths recursively
+          # Use xcrun to find iOS SDK path
+          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+          echo "iOS SDK Path: $SDK_PATH"
+
+          OPENSSL_PREFIX=$(brew --prefix openssl@3)
+          echo "OpenSSL Prefix: $OPENSSL_PREFIX"
+
+          # Build list of include paths, excluding .git and .github
           CPP_INCLUDES=""
-          for dir in $(find . -type d -not -path "./.github/*"); do
+          for dir in $(find . -type d ! -path "./.github*" ! -path "./.git*"); do
               CPP_INCLUDES="$CPP_INCLUDES -I$dir"
           done
 
-          # Find all source files except .github
-          SRC_FILES=$(find . -type f ! -path "./.github/*" \( -name "*.cpp" -o -name "*.c" -o -name "*.cxx" -o -name "*.cc" -o -name "*.mm" -o -name "*.m" \))
+          # Find all source files
+          SRC_FILES=$(find . -type f ! -path "./.github/*" ! -path "./.git/*" \( -name "*.cpp" -o -name "*.c" -o -name "*.cxx" -o -name "*.cc" -o -name "*.mm" -o -name "*.m" \))
 
           echo "Compiling ZSign with sources:"
           echo "$SRC_FILES"
 
-          # Compile
-          xargs clang++ -std=c++17 -fobjc-arc -arch arm64 \
+          # Compile as dynamic library
+          clang++ -std=c++17 -fobjc-arc -arch arm64 \
             -isysroot "$SDK_PATH" \
             -miphoneos-version-min=14.0 \
             -dynamiclib \
@@ -45,13 +46,13 @@ jobs:
             $CPP_INCLUDES \
             -L"$OPENSSL_PREFIX/lib" -lssl -lcrypto \
             -framework Foundation -framework Security -framework CoreFoundation \
-            -o ZSign <<<"$SRC_FILES"
+            -o ZSign \
+            $SRC_FILES
 
-      - name: Package as framework
-        run: |
+          # Package as framework
           mkdir -p ZSign.framework/Headers
           cp ZSign ZSign.framework/ZSign
-          find . -type f -name "*.h" ! -path "./.github/*" -exec cp {} ZSign.framework/Headers/ \; || true
+          find . -type f -name "*.h" ! -path "./.github/*" ! -path "./.git/*" -exec cp {} ZSign.framework/Headers/ \; || true
 
           cat > ZSign.framework/Info.plist << EOF
           <?xml version="1.0" encoding="UTF-8"?>
@@ -76,11 +77,9 @@ jobs:
           </plist>
           EOF
 
-      - name: Codesign
-        run: codesign --force --sign - ZSign.framework
+          codesign --force --sign - ZSign.framework
 
-      - name: Zip framework
-        run: zip -r ZSign.framework.zip ZSign.framework
+          zip -r ZSign.framework.zip ZSign.framework
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
