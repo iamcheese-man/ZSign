@@ -1,10 +1,7 @@
 name: Build Framework
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -55,38 +52,15 @@ jobs:
           find . -maxdepth 1 -type f \( -name '*.h' -o -name '*.hpp' \) \
             -exec cp {} "$BUILD_DIR/Headers/" \;
 
-          cat > "$BUILD_DIR/Info.plist" << 'PLIST'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>CFBundleExecutable</key>
-              <string>ZSign</string>
-              <key>CFBundleIdentifier</key>
-              <string>com.zziacm.helper.zsign</string>
-              <key>CFBundleName</key>
-              <string>ZSign</string>
-              <key>CFBundlePackageType</key>
-              <string>FMWK</string>
-              <key>CFBundleShortVersionString</key>
-              <string>1.0</string>
-              <key>CFBundleVersion</key>
-              <string>1</string>
-              <key>MinimumOSVersion</key>
-              <string>14.0</string>
-          </dict>
-          </plist>
-          PLIST
+          cp Info.plist "$BUILD_DIR/Info.plist"
+
+
 
           codesign --force --sign - "$BUILD_DIR"
 
-      # âââââââââââââââââââââââââââââââââââââââââââââ
-      # Add your dylib build steps below here.
       # ZSign.framework is at: $PWD/build/ZSign.framework
-      # Reference it with:
-      #   -F $PWD/build -framework ZSign
-      #   -I $PWD/build/ZSign.framework/Headers
-      # âââââââââââââââââââââââââââââââââââââââââââââ
+      # To use in a dylib build step add:
+      #   -F $PWD/build -framework ZSign -I $PWD/build/ZSign.framework/Headers
 
       - name: Zip Framework
         run: |
