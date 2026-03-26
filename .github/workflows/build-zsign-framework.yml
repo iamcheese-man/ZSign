@@ -19,7 +19,7 @@ jobs:
           brew update
           brew install openssl
 
-      - name: Build framework
+      - name: Build Framework
         run: |
           OPENSSL_INC=$(brew --prefix openssl)/include
           OPENSSL_LIB=$(brew --prefix openssl)/lib
@@ -31,24 +31,25 @@ jobs:
           mkdir -p "$BUILD_DIR/Versions/A"
           mkdir -p "$BUILD_DIR/Resources"
 
-          # Only root and the single subfolder as include paths
-          SUBFOLDER=$(find . -mindepth 1 -maxdepth 1 -type d | head -n1)
-          INCLUDE_PATHS="-I. -I$SUBFOLDER -I$OPENSSL_INC"
+          # Include root and the single subfolder
+          INCLUDE_PATHS="-I. -Icommon -I$OPENSSL_INC"
 
-          echo "Finding all source files..."
-          SRC_FILES=$(find . -maxdepth 2 -type f \( -name '*.cpp' -o -name '*.cxx' -o -name '*.cc' -o -name '*.c' -o -name '*.m' -o -name '*.mm' \))
+          # Find all source files in root and subfolder
+          SRC_FILES=$(find . -maxdepth 2 -type f \( -name '*.cpp' -o -name '*.c' -o -name '*.cc' -o -name '*.cxx' -o -name '*.m' -o -name '*.mm' \))
 
-          echo "Compiling sources..."
-          clang++ -std=c++20 -fobjc-arc -dynamiclib $SRC_FILES $INCLUDE_PATHS -L"$OPENSSL_LIB" -lssl -lcrypto -framework Foundation -o "$BUILD_DIR/Versions/A/$FRAMEWORK_NAME"
+          # Compile dynamic library
+          clang++ -std=c++20 -fobjc-arc -dynamiclib $SRC_FILES $INCLUDE_PATHS \
+              -L"$OPENSSL_LIB" -lssl -lcrypto -framework Foundation \
+              -o "$BUILD_DIR/Versions/A/$FRAMEWORK_NAME"
 
-          echo "Copying headers..."
+          # Copy headers
           find . -maxdepth 2 -type f -name '*.h' -exec cp {} "$BUILD_DIR/Headers/" \;
 
-          echo "Copying other files to Resources..."
-          find . -maxdepth 2 -type f ! -name '*.cpp' ! -name '*.cxx' ! -name '*.cc' ! -name '*.c' ! -name '*.m' ! -name '*.mm' ! -name '*.h' \
+          # Copy all other files to Resources
+          find . -maxdepth 2 -type f ! -name '*.cpp' ! -name '*.c' ! -name '*.cc' ! -name '*.cxx' ! -name '*.m' ! -name '*.mm' ! -name '*.h' \
             -exec cp --parents {} "$BUILD_DIR/Resources/" \;
 
-          echo "Setting up framework symlinks..."
+          # Set up symlinks
           ln -sfn A "$BUILD_DIR/Versions/Current"
           ln -sfn Versions/Current/$FRAMEWORK_NAME "$BUILD_DIR/$FRAMEWORK_NAME"
           ln -sfn Versions/Current/Headers "$BUILD_DIR/Headers"
