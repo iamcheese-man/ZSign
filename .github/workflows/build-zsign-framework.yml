@@ -31,6 +31,10 @@ jobs:
           mkdir -p "$BUILD_DIR/Versions/A"
           mkdir -p "$BUILD_DIR/Resources"
 
+          # Include OpenSSL and all repo directories for headers
+          INCLUDE_PATHS=$(find . -type d | sed 's/^/-I/')
+          INCLUDE_PATHS="$INCLUDE_PATHS -I$OPENSSL_INC"
+
           echo "Finding all compilable source files..."
           SRC_FILES=$(find . -type f \( -name '*.cpp' -o -name '*.cxx' -o -name '*.cc' -o -name '*.c' -o -name '*.m' -o -name '*.mm' \))
 
@@ -39,7 +43,7 @@ jobs:
           else
             echo "Compiling sources..."
             clang++ -std=c++20 -fobjc-arc -dynamiclib -o "$BUILD_DIR/Versions/A/$FRAMEWORK_NAME" $SRC_FILES \
-              -I"$OPENSSL_INC" -L"$OPENSSL_LIB" -lssl -lcrypto -framework Foundation
+              $INCLUDE_PATHS -L"$OPENSSL_LIB" -lssl -lcrypto -framework Foundation
           fi
 
           echo "Copying headers..."
