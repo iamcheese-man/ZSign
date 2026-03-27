@@ -1,1 +1,3 @@
-Just renaming the .m files to .mm so i don't have to use clang and clang++ at the same time.
+## What is this repo?
+
+It's a repository for helping iOS developers be more efficient and consume less time. Instead of grabbing the whole ZSign Source code, you can drop the .framework in the app and call it via #include on Obj-C++ or #import on Swift.
