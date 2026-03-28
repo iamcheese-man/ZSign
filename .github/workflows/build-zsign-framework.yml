@@ -1,7 +1,17 @@
-name: Build Framework
+name: Build ZSign
 
 on:
   workflow_dispatch:
+    inputs:
+      output_type:
+        description: 'Output type'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - dylib
+          - framework
+          - both
 
 jobs:
   build:
@@ -16,59 +26,85 @@ jobs:
           git clone --depth 1 https://github.com/krzyzanowskim/OpenSSL.git openssl-ios-src
           mkdir -p openssl-ios/lib openssl-ios/include
           cp openssl-ios-src/iphoneos/lib/libcrypto.a openssl-ios/lib/libcrypto.a
-          cp openssl-ios-src/iphoneos/lib/libssl.a openssl-ios/lib/libssl.a
+          cp openssl-ios-src/iphoneos/lib/libssl.a    openssl-ios/lib/libssl.a
           cp -r openssl-ios-src/iphoneos/include/openssl openssl-ios/include/openssl
 
-      - name: Build ZSign Framework
+      - name: Compile sources
         run: |
           OPENSSL_PREFIX="$PWD/openssl-ios"
-          FRAMEWORK_NAME="ZSign"
-          BUILD_DIR="$PWD/build/$FRAMEWORK_NAME.framework"
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-
-          mkdir -p "$BUILD_DIR/Headers"
+          mkdir -p build
 
           SRC_FILES=$(find . -maxdepth 1 -type f \( \
             -name '*.cpp' -o -name '*.c' -o -name '*.cc' -o \
-            -name '*.cxx' -o -name '*.m' -o -name '*.mm' \
+            -name '*.cxx' -o -name '*.m'  -o -name '*.mm' \
           \))
 
-          clang++ \
+          COMMON_FLAGS="\
             -std=c++20 \
             -fobjc-arc \
-            -dynamiclib \
             -arch arm64 \
-            -isysroot "$SDK" \
+            -isysroot $SDK \
             -miphoneos-version-min=14.0 \
-            -install_name @rpath/$FRAMEWORK_NAME.framework/$FRAMEWORK_NAME \
             -I . \
-            -I "$OPENSSL_PREFIX/include" \
-            "$OPENSSL_PREFIX/lib/libssl.a" \
-            "$OPENSSL_PREFIX/lib/libcrypto.a" \
-            -framework Foundation \
-            $SRC_FILES \
-            -o "$BUILD_DIR/$FRAMEWORK_NAME"
+            -I $OPENSSL_PREFIX/include \
+            $OPENSSL_PREFIX/lib/libssl.a \
+            $OPENSSL_PREFIX/lib/libcrypto.a \
+            -framework Foundation"
 
-          find . -maxdepth 1 -type f \( -name '*.h' -o -name '*.hpp' \) \
-            -exec cp {} "$BUILD_DIR/Headers/" \;
+          # --- dylib ---
+          if [ "${{ github.event.inputs.output_type }}" = "dylib" ] || [ "${{ github.event.inputs.output_type }}" = "both" ]; then
+            echo "Building ZSign.dylib..."
+            clang++ $COMMON_FLAGS \
+              -dynamiclib \
+              -install_name @rpath/ZSign.dylib \
+              $SRC_FILES \
+              -o build/ZSign.dylib
+            echo "dylib done"
+          fi
 
-          cp Info.plist "$BUILD_DIR/Info.plist"
+          # --- framework ---
+          if [ "${{ github.event.inputs.output_type }}" = "framework" ] || [ "${{ github.event.inputs.output_type }}" = "both" ]; then
+            echo "Building ZSign.framework..."
+            FRAMEWORK_DIR="build/ZSign.framework"
+            mkdir -p "$FRAMEWORK_DIR/Headers"
 
+            clang++ $COMMON_FLAGS \
+              -dynamiclib \
+              -install_name @rpath/ZSign.framework/ZSign \
+              $SRC_FILES \
+              -o "$FRAMEWORK_DIR/ZSign"
 
+            find . -maxdepth 1 -type f \( -name '*.h' -o -name '*.hpp' \) \
+              -exec cp {} "$FRAMEWORK_DIR/Headers/" \;
 
-          codesign --force --sign - "$BUILD_DIR"
+            cp Info.plist "$FRAMEWORK_DIR/Info.plist"
+            codesign --force --sign - "$FRAMEWORK_DIR"
+            echo "framework done"
+          fi
 
-      # ZSign.framework is at: $PWD/build/ZSign.framework
-      # To use in a dylib build step add:
-      #   -F $PWD/build -framework ZSign -I $PWD/build/ZSign.framework/Headers
-
-      - name: Zip Framework
+      - name: Package artifacts
         run: |
           cd build
-          ditto -c -k --sequesterRsrc --keepParent ZSign.framework ZSign.framework.zip
+          if [ "${{ github.event.inputs.output_type }}" = "dylib" ] || [ "${{ github.event.inputs.output_type }}" = "both" ]; then
+            zip ZSign.dylib.zip ZSign.dylib
+          fi
+          if [ "${{ github.event.inputs.output_type }}" = "framework" ] || [ "${{ github.event.inputs.output_type }}" = "both" ]; then
+            ditto -c -k --sequesterRsrc --keepParent ZSign.framework ZSign.framework.zip
+          fi
 
-      - name: Upload Artifact
+      - name: Upload dylib
+        if: ${{ github.event.inputs.output_type == 'dylib' || github.event.inputs.output_type == 'both' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZSign.dylib
+          path: build/ZSign.dylib.zip
+          retention-days: 14
+
+      - name: Upload framework
+        if: ${{ github.event.inputs.output_type == 'framework' || github.event.inputs.output_type == 'both' }}
         uses: actions/upload-artifact@v4
         with:
           name: ZSign.framework
           path: build/ZSign.framework.zip
+          retention-days: 14
